@@ -1,0 +1,50 @@
+name: CD - hello_world
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "cloud/functions/hello_world/**"
+
+
+env:
+  VAULT_URL: 'https://vault-prod.build.ingka.ikea.com'
+  VAULT_NAMESPACE: 'stas-hello-world'
+  GCP_PROJECT: 'ingka-dsm-devops-dev'
+
+jobs:
+  deploy-get-board-events:
+    name: Deploy hello_world cloud function
+    runs-on: ubuntu-latest
+    steps:
+      - name: Service Account Secrets
+        uses: hashicorp/vault-action@v2.1.0
+        id: serviceaccount_secrets
+        with:
+          url: ${{ env.VAULT_URL }}
+          namespace: ${{ env.VAULT_NAMESPACE }}
+          method: approle
+          roleId: ${{ secrets.VAULT_ROLEID }}
+          secretId: ${{ secrets.VAULT_SECRETID }}
+          secrets: resources/gcp/${{ env.GCP_PROJECT }}/service_accounts cloud_function_deploy
+
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@master
+        with:
+          service_account_key: ${{ steps.serviceaccount_secrets.outputs.cloud_function_deploy }}
+          project_id: ${{ env.GCP_PROJECT }}
+          export_default_credentials: true
+
+      - name: Deploy
+        uses: google-github-actions/deploy-cloud-functions@main
+        with:
+          name: hello_world
+          runtime: python38
+          source_dir: 'cloud/functions/hello_world'
+          entry_point: hello_world
+          project_id: ${{ env.GCP_PROJECT }}
+          timeout: '540'
